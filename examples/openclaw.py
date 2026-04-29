@@ -14,23 +14,23 @@ def get_config(env_name, prompt, default=None, is_secret=False):
     value = os.environ.get(env_name)
     if value:
         return value
-    
+
     # Format prompt to clearly show the default option
     display_prompt = prompt.strip()
     if default:
         display_prompt = f"{display_prompt} (default: {default}): "
     else:
         display_prompt = f"{display_prompt}: "
-    
+
     raw_val = getpass.getpass(display_prompt) if is_secret else input(display_prompt)
-    
+
     # Use default value if the user provides no input
     if not raw_val and default:
         return default
 
     # Clean up bracketed paste mode sequences (^[[200~ and ^[[201~) common in Xshell
     clean_val = raw_val.replace('\x1b[200~', '').replace('\x1b[201~', '')
-    
+
     return clean_val.strip()
 
 def get_sandbox_home(sandbox):
@@ -40,15 +40,15 @@ def get_sandbox_home(sandbox):
     """
     whoami_result = sandbox.execute(cmd="whoami")
     username = whoami_result.stdout.strip()
-    
+
     if username == 'root':
         return '/root'
-    
+
     grep_result = sandbox.execute(
         cmd="sh",
         args=["-c", f"grep '^{username}:' /etc/passwd"]
     )
-    
+
     fields = grep_result.stdout.strip().split(':')
     return fields[5] if len(fields) >= 6 else '/'
 

@@ -67,6 +67,7 @@ type SandboxConfig struct {
 	VsockSignalRetry   time.Duration `yaml:"vsock_signal_retry"`
 	VsockSignalTimeout time.Duration `yaml:"vsock_signal_timeout"`
 	RequestTimeout     time.Duration `yaml:"request_timeout"`
+	DefaultVmm         string        `yaml:"default_vmm"`
 }
 
 // DefaultConfig returns the default configuration
@@ -107,6 +108,7 @@ func DefaultConfig() *Config {
 			VsockSignalRetry:   10 * time.Millisecond,
 			VsockSignalTimeout: 60 * time.Second,
 			RequestTimeout:     60 * time.Second,
+			DefaultVmm:         "cloud-hypervisor",
 		},
 	}
 }
@@ -189,6 +191,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 	if cfg.Sandbox.RequestTimeout == 0 {
 		cfg.Sandbox.RequestTimeout = defaultCfg.Sandbox.RequestTimeout
+	}
+	if cfg.Sandbox.DefaultVmm == "" {
+		cfg.Sandbox.DefaultVmm = defaultCfg.Sandbox.DefaultVmm
 	}
 
 	return &cfg, nil

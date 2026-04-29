@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -12,8 +13,10 @@ import (
 	"github.com/openeuler/Conch/internal/daemon"
 	"github.com/openeuler/Conch/internal/image"
 	"github.com/openeuler/Conch/internal/sandbox/network"
+	"github.com/openeuler/Conch/internal/sandbox/vmm"
 	"github.com/openeuler/Conch/internal/snapshot"
 	"github.com/openeuler/Conch/pkg/ulog"
+	"golang.org/x/sys/unix"
 )
 
 type Manager struct {
@@ -24,9 +27,10 @@ type Manager struct {
 	vsockSignalTimeout time.Duration
 	requestTimeout     time.Duration
 	cidAllocator       *CIDAllocator
+	defaultRuntime     string
 }
 
-func NewManager(p *network.Pool, daemonClient *daemon.Client, vsockSignalRetry, vsockSignalTimeout, requestTimeout time.Duration) *Manager {
+func NewManager(p *network.Pool, daemonClient *daemon.Client, vsockSignalRetry, vsockSignalTimeout, requestTimeout time.Duration, defaultRuntime string) *Manager {
 	return &Manager{
 		pool:               p,
 		daemonClient:       daemonClient,
@@ -34,6 +38,7 @@ func NewManager(p *network.Pool, daemonClient *daemon.Client, vsockSignalRetry, 
 		vsockSignalTimeout: vsockSignalTimeout,
 		requestTimeout:     requestTimeout,
 		cidAllocator:       NewCIDAllocator(),
+		defaultRuntime:     defaultRuntime,
 	}
 }
 
@@ -81,8 +86,18 @@ func createSandboxWithVsockSend(ctx context.Context, snapshotConf *snapshot.Snap
 		return nil, fmt.Errorf("failed to create sandbox: %w", createErr)
 	}
 
+	vmmType, exists := vmm.GetVmmType(vmmName)
+	if !exists {
+		return sbx, fmt.Errorf("invalid VMM type: %s", vmmName)
+	}
+
 	readyCh := make(chan struct{}, 1)
-	go waitForVsockAgentReady(ctx, sbx, sandboxId, vsockSocketPath, vsockSignalRetry, vsockSignalTimeout, readyCh)
+
+	if vmmType == vmm.StratovirtVmmType {
+		go waitForVsockAgentReadyStratovirt(ctx, sbx, sandboxId, vsockCID, vsockSignalRetry, vsockSignalTimeout, readyCh)
+	} else if vmmType == vmm.CLHVmmType {
+		go waitForVsockAgentReady(ctx, sbx, sandboxId, vsockSocketPath, vsockSignalRetry, vsockSignalTimeout, readyCh)
+	}
 
 	select {
 	case <-readyCh:
@@ -201,6 +216,127 @@ func waitForVsockAgentReady(ctx context.Context, sbx *Sandbox, sandboxId, vsockS
 	}
 }
 
+func waitForVsockAgentReadyStratovirt(ctx context.Context, sbx *Sandbox, sandboxId string, vsockCID uint32, vsockSignalRetry, vsockSignalTimeout time.Duration, readyCh chan struct{}) {
+	logger := ulog.GetLogger()
+	payload := fmt.Sprintf("I AM SANDBOX_ID:%s\n", sandboxId)
+
+	timer := time.NewTimer(vsockSignalTimeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-timer.C:
+			logger.Error("vsock signal attempts timed out for Stratovirt", ulog.F("sandboxId", sandboxId), ulog.F("timeout", vsockSignalTimeout))
+			return
+		case <-ctx.Done():
+			return
+		default:
+			fd, err := unix.Socket(unix.AF_VSOCK, unix.SOCK_STREAM, 0)
+			if err != nil {
+				if strings.Contains(err.Error(), "not supported") || strings.Contains(err.Error(), "not available") || strings.Contains(err.Error(), "not permitted") {
+					logger.Warn("AF_VSOCK not supported on this system, skipping vsock detection for Stratovirt", ulog.F("sandboxId", sandboxId), ulog.F("error", err))
+					close(readyCh)
+					return
+				}
+				logger.Debug("failed to create AF_VSOCK socket for Stratovirt, retrying...", ulog.F("sandboxId", sandboxId), ulog.F("error", err))
+				time.Sleep(vsockSignalRetry)
+				continue
+			}
+
+			sa := &unix.SockaddrVM{
+				CID:  vsockCID,
+				Port: vsockReadyPort,
+			}
+
+			err = unix.Connect(fd, sa)
+			if err != nil {
+				if strings.Contains(err.Error(), "no such device") || strings.Contains(err.Error(), "not supported") || strings.Contains(err.Error(), "not permitted") {
+					unix.Close(fd)
+					logger.Warn("AF_VSOCK device not available on this system, skipping vsock detection for Stratovirt", ulog.F("sandboxId", sandboxId), ulog.F("error", err))
+					close(readyCh)
+					return
+				}
+				logger.Debug("failed to connect to VM vsock for Stratovirt, retrying...",
+					ulog.F("sandboxId", sandboxId),
+					ulog.F("cid", vsockCID),
+					ulog.F("port", vsockReadyPort),
+					ulog.F("error", err))
+				unix.Close(fd)
+				time.Sleep(vsockSignalRetry)
+				continue
+			}
+
+			logger.Debug("Connected to Stratovirt VM via AF_VSOCK",
+				ulog.F("sandboxId", sandboxId),
+				ulog.F("cid", vsockCID),
+				ulog.F("port", vsockReadyPort))
+
+			_, err = unix.Write(fd, []byte(payload))
+			if err != nil {
+				logger.Warn("failed to send payload to Stratovirt VM, retrying...", ulog.F("sandboxId", sandboxId), ulog.F("error", err))
+				unix.Close(fd)
+				time.Sleep(vsockSignalRetry)
+				continue
+			}
+
+			logger.Debug("payload sent to Stratovirt VM, waiting for READY signal", ulog.F("sandboxId", sandboxId))
+
+			buf := make([]byte, 64)
+			n, err := unix.Read(fd, buf)
+			if err != nil {
+				logger.Debug("failed to read from Stratovirt vsock, retrying...", ulog.F("sandboxId", sandboxId), ulog.F("error", err))
+				unix.Close(fd)
+				time.Sleep(vsockSignalRetry)
+				continue
+			}
+
+			agentMsg := string(buf[:n])
+
+			if strings.Contains(agentMsg, "NOT_READY") {
+				logger.Error("Agent gRPC service not started in Stratovirt VM", ulog.F("sandboxId", sandboxId))
+				unix.Close(fd)
+				time.Sleep(vsockSignalRetry)
+				continue
+			}
+
+			if strings.Contains(agentMsg, "READY:") {
+				parts := strings.SplitN(agentMsg, "READY:", 2)
+				agentVersion := ""
+				if len(parts) > 1 {
+					agentVersion = strings.TrimSpace(parts[1])
+				}
+
+				if agentVersion != expectedAgentVersion {
+					logger.Warn("Received Stratovirt agent signal but version mismatch",
+						ulog.F("sandboxId", sandboxId),
+						ulog.F("agent_version", agentVersion),
+						ulog.F("expected_version", expectedAgentVersion))
+				} else {
+					logger.Info("Stratovirt Sandbox Agent is officially READY!",
+						ulog.F("sandboxId", sandboxId),
+						ulog.F("agent_version", agentVersion))
+				}
+
+				file := os.NewFile(uintptr(fd), "vsock")
+				vsockConn, err := net.FileConn(file)
+				if err != nil {
+					logger.Warn("failed to create net.Conn from vsock fd", ulog.F("error", err))
+					file.Close()
+					time.Sleep(vsockSignalRetry)
+					continue
+				}
+				sbx.vsockConn = vsockConn
+				close(readyCh)
+				return
+			}
+
+			logger.Warn("Received unknown message from Stratovirt Agent", ulog.F("msg", agentMsg))
+			unix.Close(fd)
+			time.Sleep(vsockSignalRetry)
+		}
+	}
+}
+
 func (m *Manager) Create(req SandboxCreateRequest) (string, error) {
 	logger := ulog.GetLogger()
 	logger.Debug("creating sandbox in manager")
@@ -211,6 +347,12 @@ func (m *Manager) Create(req SandboxCreateRequest) (string, error) {
 	var sbx *Sandbox
 	var peerIP string
 	namespace := m.resolveNamespace(req.Namespace)
+
+	vmmName := req.VmmName
+	if vmmName == "" {
+		vmmName = m.defaultRuntime
+		logger.Debug("using default VMM", ulog.F("vmm", vmmName))
+	}
 
 	parentIDs, err := m.resolveParentSnapshotIDs(context.Background(), namespace, req)
 	if err != nil {
@@ -261,7 +403,7 @@ func (m *Manager) Create(req SandboxCreateRequest) (string, error) {
 		}
 	}()
 
-	sbx, err = createSandboxWithVsockSend(ctx, snapshotConf, namespace, req.VmmName, req.SandboxId, req.VcpuNum, m.pool, m.vsockSignalRetry, m.vsockSignalTimeout, resume, vsockCID, vsockSocketPath)
+	sbx, err = createSandboxWithVsockSend(ctx, snapshotConf, namespace, vmmName, req.SandboxId, req.VcpuNum, m.pool, m.vsockSignalRetry, m.vsockSignalTimeout, resume, vsockCID, vsockSocketPath)
 
 	if err != nil {
 		if releaseErr := m.ReleaseCID(req.SandboxId); releaseErr != nil {

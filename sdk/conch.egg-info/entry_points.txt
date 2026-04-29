@@ -1,0 +1,2 @@
+[console_scripts]
+conch-sdk-init-config = conch.init_config:main

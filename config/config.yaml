@@ -18,7 +18,7 @@ server:
 
 network:
   # CIDR capacity is at most: (4096-3*bridge_count) slots; practical max depends on host/kernel/network setup. Default: 250
-  pool_size: 250
+  pool_size: 20
   # If setting dynamic reservation to true, then there is a background thread keep filling the pool till it reaches the max size set above
   dynamic_reservation: false
   # Number of bridges. Power-of-two values use the parent subnet most efficiently; non-power-of-two values are rounded up internally for subnet sizing.
@@ -42,3 +42,5 @@ sandbox:
   vsock_signal_retry: 10ms
   vsock_signal_timeout: 60s
   request_timeout: 60s
+  default_vmm: stratovirt
+  # default_vmm: cloud-hypervisor

@@ -7,8 +7,8 @@ import (
 
 	"github.com/opencontainers/go-digest"
 	"go.podman.io/image/v5/docker/reference"
-	"go.podman.io/image/v5/transports"
 	imageStorage "go.podman.io/image/v5/storage"
+	"go.podman.io/image/v5/transports"
 	"go.podman.io/storage"
 )
 

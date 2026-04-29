@@ -242,14 +242,14 @@ class Sandbox:
     def create(cls, snapshot_id: Optional[str] = None, **kwargs) -> "Sandbox":
         sbx = cls(snapshot_id=snapshot_id, **kwargs)
         return sbx._do_create()
-    
+
     def get_info(self) -> SandboxInfo:
         return SandboxInfo(
             sandbox_id=self.sandbox_id,
             ip=self.ip if self.ip else "",
             snapshot_id=self.snapshot_id,
         )
-    
+
     def execute(
             self,
             cmd: str,

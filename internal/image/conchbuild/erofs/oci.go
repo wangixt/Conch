@@ -136,4 +136,3 @@ func convertDockerArchiveToEROFS(archivePath, outDir string) ([]string, error) {
 	}
 	return result, nil
 }
-

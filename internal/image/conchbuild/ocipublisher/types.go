@@ -8,8 +8,8 @@ const (
 	VMDataLayerMediaType = v1.MediaTypeImageLayerGzip
 
 	VMStateTypeFull           = "full-state"
-	AnnotationVMStateType    = "io.conch.image.vm.state.type"
-	AnnotationVMParentDigest = "io.conch.image.vm.parent.digest"
+	AnnotationVMStateType     = "io.conch.image.vm.state.type"
+	AnnotationVMParentDigest  = "io.conch.image.vm.parent.digest"
 	VMKernelManifestMediaType = "application/vnd.conch.image.vm.kernel.manifest.v1+json"
 	MediaTypeRootfsManifest   = v1.MediaTypeImageManifest
 )

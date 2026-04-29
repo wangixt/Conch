@@ -58,7 +58,7 @@ def add_config(box):
             f"mkdir -p /root/.claude && cat > /root/.claude/settings.json << 'EOF'\n{claude_settings}\nEOF"
         ],
     )
-    
+
     # 2. Configure the SSH authorized_keys file
     result = box.execute(
         "sh",

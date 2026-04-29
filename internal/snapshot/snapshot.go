@@ -116,7 +116,6 @@ func AcquireResumeWorkspace(ctx context.Context, namespace, key string, parents 
 	return gServer.AcquireResumeWorkspace(ctx, namespace, key, parents, cid, socketPath, opts...)
 }
 
-
 // ResolveParentSnapshotIDs resolves parent mem/vm snapshots from rootfs snapshot.
 func ResolveParentSnapshotIDs(namespace, rootfs string) (ParentSnapshotIDs, error) {
 	if gServer.snt == nil {

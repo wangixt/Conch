@@ -8,8 +8,8 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/images"
-	"github.com/openeuler/Conch/internal/image/conchbuild/export"
 	"github.com/opencontainers/image-spec/identity"
+	"github.com/openeuler/Conch/internal/image/conchbuild/export"
 	"github.com/sirupsen/logrus"
 	"go.podman.io/image/v5/types"
 	"go.podman.io/storage"

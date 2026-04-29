@@ -28,18 +28,18 @@
 ###############################################################################
 ARCH=$(uname -m)
 case $ARCH in
-    x86_64)  
+    x86_64)
         ARCH_SUFFIX="x86"
         CNTD_ARCH="amd64"
         CLH_BINARY="cloud-hypervisor-static"
         ;;
-    aarch64) 
+    aarch64)
         ARCH_SUFFIX="aarch"
         CNTD_ARCH="arm64"
         CLH_BINARY="cloud-hypervisor-static-aarch64"
         ;;
-    *)       
-        echo "Unsupported architecture: $ARCH"; exit 1 
+    *)
+        echo "Unsupported architecture: $ARCH"; exit 1
         ;;
 esac
 
@@ -250,7 +250,7 @@ install_sdk() {
             echo "Error: Failed to install SDK with pip."
             return 1
         fi
-        
+
         # Setup config
         [ ! -d "/etc/conch" ] && mkdir -p /etc/conch
         if [ ! -f "/etc/conch/sdk-config.yaml" ] && [ -f "./config/sdk-config.yaml" ]; then

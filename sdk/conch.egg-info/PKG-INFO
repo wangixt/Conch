@@ -16,6 +16,7 @@ Classifier: Programming Language :: Python :: 3.11
 Classifier: Programming Language :: Python :: 3.12
 Requires-Python: >=3.8
 Requires-Dist: requests>=2.25.0
+Requires-Dist: requests-unixsocket>=0.3.0
 Requires-Dist: grpcio>=1.57.0
 Requires-Dist: protobuf>=4.21.0
 Requires-Dist: PyYAML>=5.4.0
