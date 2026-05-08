@@ -15,6 +15,7 @@ import (
 	"github.com/openeuler/Conch/internal/daemon"
 	"github.com/openeuler/Conch/internal/snapshot/common"
 	"github.com/openeuler/Conch/internal/snapshot/snapshotter"
+	"github.com/openeuler/Conch/pkg/ulog"
 )
 
 // server manages snapshot lifecycle with caching and view sharing.
@@ -279,17 +280,39 @@ func (s *server) AcquireResumeWorkspace(
 	socketPath string,
 	opts ...Opt,
 ) (_ *SnapshotConfig, err error) {
+	logger := ulog.GetLogger()
+	logger.Info("AcquireResumeWorkspace START",
+		ulog.F("namespace", namespace),
+		ulog.F("key", key),
+		ulog.F("parents.Rootfs", parents.Rootfs),
+		ulog.F("parents.VM", parents.VM),
+		ulog.F("parents.Mem", parents.Mem),
+	)
+
 	memKey := getMemKeyFromRootfs(key)
 	rootfsViewAliasKey := getRootfsViewAliasKey(key)
 	rootfsViewSnapshotKey := getSharedViewSnapshotKey(common.SnapshotMountRootfs, parents.Rootfs)
 	vmViewAliasKey := getVMViewAliasKey(key)
 	vmViewSnapshotKey := getSharedViewSnapshotKey(common.SnapshotMountVM, parents.VM)
 
+	logger.Debug("View keys",
+		ulog.F("rootfsViewAliasKey", rootfsViewAliasKey),
+		ulog.F("rootfsViewSnapshotKey", rootfsViewSnapshotKey),
+		ulog.F("vmViewAliasKey", vmViewAliasKey),
+		ulog.F("vmViewSnapshotKey", vmViewSnapshotKey),
+		ulog.F("memKey", memKey),
+	)
+
 	conf := &SnapshotConfig{
 		Rootfs: getSharedMountPath(s.workDir, namespace, parents.Rootfs),
 		MemDir: getActiveMountPath(s.workDir, namespace, key, common.SnapshotMountMem),
 		VmDir:  getSharedMountPath(s.workDir, namespace, parents.VM),
 	}
+	logger.Info("SnapshotConfig paths",
+		ulog.F("Rootfs", conf.Rootfs),
+		ulog.F("MemDir", conf.MemDir),
+		ulog.F("VmDir", conf.VmDir),
+	)
 	conf.initDefaults()
 	for _, o := range opts {
 		o(conf)
@@ -322,33 +345,44 @@ func (s *server) AcquireResumeWorkspace(
 
 	rootfsCleaner, err := ops.viewSnapshot(ctx, namespace, parents.Rootfs, rootfsViewAliasKey, rootfsViewSnapshotKey, conf.Rootfs, withLabels(conf))
 	if err != nil {
+		logger.Error("view rootfs FAILED", ulog.F("error", err))
 		return nil, fmt.Errorf("view rootfs failed: %v", err)
 	}
+	logger.Info("view rootfs SUCCESS", ulog.F("mountPoint", conf.Rootfs))
 	viewCleanups = append(viewCleanups, rootfsCleaner)
 
+	logger.Debug("Listing rootfs layer erofs files", ulog.F("rootfsPath", conf.Rootfs))
 	conf.pmemFiles, err = listRootfsLayerErofs(conf.Rootfs)
 	if err != nil {
+		logger.Error("listRootfsLayerErofs FAILED", ulog.F("error", err), ulog.F("rootfsPath", conf.Rootfs))
 		return nil, fmt.Errorf("list rootfs layer erofs failed: %v", err)
 	}
+	logger.Info("Found pmem files", ulog.F("count", len(conf.pmemFiles)), ulog.F("files", conf.pmemFiles))
 
 	vmCleaner, err := ops.viewSnapshot(ctx, namespace, parents.VM, vmViewAliasKey, vmViewSnapshotKey, conf.VmDir)
 	if err != nil {
+		logger.Error("view vm FAILED", ulog.F("error", err))
 		return nil, fmt.Errorf("view vm failed: %v", err)
 	}
+	logger.Info("view vm SUCCESS", ulog.F("mountPoint", conf.VmDir))
 	viewCleanups = append(viewCleanups, vmCleaner)
 
 	memCleaner, err := ops.prepareAndRegisterSnapshot(ctx, NewSnapshotLocator(namespace, memKey, parents.Mem), conf.MemDir)
 	if err != nil {
+		logger.Error("prepareAndRegisterSnapshot FAILED", ulog.F("error", err))
 		return nil, err
 	}
+	logger.Info("prepareAndRegisterSnapshot SUCCESS", ulog.F("memDir", conf.MemDir))
 	activeCleanups = append(activeCleanups, cleanupItem{key: memKey, cleaner: memCleaner})
 
 	if err = ensureMemFile(conf, conf.MemDir, false); err != nil {
+		logger.Error("ensureMemFile FAILED", ulog.F("error", err))
 		return nil, fmt.Errorf("mem.img verification failed: %v", err)
 	}
 
 	configUpdater := &configUpdater{}
 	configFilePath := filepath.Join(conf.SnapDir(), common.SnapshotConfigFileName)
+	logger.Debug("Updating snapshot config", ulog.F("configFilePath", configFilePath))
 	if err = configUpdater.updateSnapshotConfig(
 		configFilePath,
 		conf.KernelFile(),
@@ -358,9 +392,12 @@ func (s *server) AcquireResumeWorkspace(
 		cid,
 		socketPath,
 	); err != nil {
+		logger.Error("updateSnapshotConfig FAILED", ulog.F("error", err))
 		return nil, fmt.Errorf("update snapshot config failed: %v", err)
 	}
+	logger.Info("updateSnapshotConfig SUCCESS")
 
+	logger.Info("AcquireResumeWorkspace completed SUCCESSFULLY")
 	return conf, nil
 }
 

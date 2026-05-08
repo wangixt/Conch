@@ -51,7 +51,7 @@ const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 -initrd {{ .RootfsPath }} \
 -append "console=ttyS0 reboot=k quiet panic=1 root=/dev/ram0 rw" \
 -m {{ .MemorySize }}M \
--object memory-backend-file,size={{ .MemorySize }}M,id=mem0,mem-path={{ .MemoryPath }},share=on \
+-object memory-backend-ram,size={{ .MemorySize }}M,id=mem0 \
 -smp {{ .CPUBoot }} \
 -qmp unix:{{ .VmmSocket }},server,nowait \
 -serial socket,path={{ .SerialSocket }},server,nowait \
@@ -60,7 +60,7 @@ const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 {{ .PmemDevices }} \
 -device vhost-vsock-pci,id=vsock0,guest-cid={{ .VsockCID }},bus=pcie.0,addr=0x11 \
 -disable-seccomp \
--incoming file:{{ .SnapfilePath }}`
+-incoming file:{{ .SnapfilePath }},mapped=false`
 
 type StartScriptStratovirtArgs struct {
 	VmmBinaryPath string
@@ -109,7 +109,7 @@ func (s *StratovirtClient) BuildStartCmd(args *ResourceArgs, isResume bool) (str
 		vmmBinaryPath = path
 	}
 
-	pmemDevices := buildPmemDevices(args.PmemPaths)
+	pmemDevices := buildPmemDevices(args.PmemPaths, isResume)
 
 	stArgs := StartScriptStratovirtArgs{
 		VmmBinaryPath: vmmBinaryPath,
@@ -169,7 +169,7 @@ func (s *StratovirtClient) BuildStartCmd(args *ResourceArgs, isResume bool) (str
 	return script, nil
 }
 
-func buildPmemDevices(pmemPaths []string) string {
+func buildPmemDevices(pmemPaths []string, readonly bool) string {
 	if len(pmemPaths) == 0 {
 		return ""
 	}
@@ -187,7 +187,7 @@ func buildPmemDevices(pmemPaths []string) string {
 
 		sizeStr := fmt.Sprintf("%dM", size/(1024*1024))
 
-		object := fmt.Sprintf("-object memory-backend-file,size=%s,id=%s,mem-path=%s,share=on", sizeStr, memId, path)
+		object := fmt.Sprintf("-object memory-backend-file,size=%s,id=%s,mem-path=%s,share=off", sizeStr, memId, path)
 		device := fmt.Sprintf("-device virtio-pmem-pci,id=%s,memdev=%s,bus=pcie.0,addr=%s", devId, memId, addr)
 
 		devices = append(devices, object, device)

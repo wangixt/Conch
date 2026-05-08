@@ -14,6 +14,7 @@ import (
 
 	"github.com/openeuler/Conch/internal/snapshot/common"
 	"github.com/openeuler/Conch/internal/snapshot/snapshotter"
+	"github.com/openeuler/Conch/pkg/ulog"
 )
 
 // viewMountRef represents a shared view mount with reference counting.
@@ -143,6 +144,14 @@ func (vm *viewManager) getOrCreateViewMount(
 	namespace, parentSnapshotID, viewSnapshotKey, mountPoint string,
 	opts ...snapshots.Opt,
 ) (_ *viewMountRef, created bool, err error) {
+	logger := ulog.GetLogger()
+	logger.Info("getOrCreateViewMount START",
+		ulog.F("namespace", namespace),
+		ulog.F("parentSnapshotID", parentSnapshotID),
+		ulog.F("viewSnapshotKey", viewSnapshotKey),
+		ulog.F("mountPoint", mountPoint),
+	)
+
 	vm.viewLock.Lock()
 	if nsMap, ok := vm.viewMounts[namespace]; ok {
 		if ref, ok := nsMap[parentSnapshotID]; ok {
@@ -169,6 +178,7 @@ func (vm *viewManager) getOrCreateViewMount(
 				return nil, false, fmt.Errorf("view mount path mismatch for %s/%s: %s vs %s", namespace, parentSnapshotID, ref.mountPoint, mountPoint)
 			}
 			vm.viewLock.Unlock()
+			logger.Info("getOrCreateViewMount REUSED existing mount")
 			return ref, false, nil
 		}
 	}
@@ -188,31 +198,43 @@ func (vm *viewManager) getOrCreateViewMount(
 	vm.viewMounts[namespace][parentSnapshotID] = placeholder
 	vm.viewLock.Unlock()
 
+	logger.Debug("Calling snt.View", ulog.F("viewSnapshotKey", viewSnapshotKey), ulog.F("parentSnapshotID", parentSnapshotID))
 	mounts, err := snt.View(ctx, namespace, viewSnapshotKey, parentSnapshotID, opts...)
 	if err != nil {
+		logger.Error("snt.View FAILED", ulog.F("error", err))
 		vm.removePlaceholder(namespace, parentSnapshotID, readyCh, err)
 		return nil, false, err
 	}
+	logger.Info("snt.View SUCCESS", ulog.F("mountsCount", len(mounts)))
 	if len(mounts) != 1 {
 		mountErr := fmt.Errorf("overlayfs require only one mount info, but get: %v", mounts)
+		logger.Error("Invalid mounts count", ulog.F("error", mountErr))
 		vm.removePlaceholder(namespace, parentSnapshotID, readyCh, mountErr)
 		return nil, false, mountErr
 	}
+	logger.Debug("MkdirAll for mountPoint", ulog.F("mountPoint", mountPoint))
 	if err = os.MkdirAll(mountPoint, common.DirMode); err != nil {
+		logger.Error("MkdirAll FAILED", ulog.F("mountPoint", mountPoint), ulog.F("error", err))
 		vm.removePlaceholder(namespace, parentSnapshotID, readyCh, err)
 		return nil, false, err
 	}
+	logger.Info("MkdirAll SUCCESS", ulog.F("mountPoint", mountPoint))
+
+	logger.Debug("Calling mounts[0].Mount", ulog.F("mountPoint", mountPoint))
 	if err = mounts[0].Mount(mountPoint); err != nil {
 		mountErr := fmt.Errorf("mount snapshot %v failed: %v", viewSnapshotKey, err)
+		logger.Error("Mount FAILED", ulog.F("error", mountErr))
 		vm.removePlaceholder(namespace, parentSnapshotID, readyCh, mountErr)
 		return nil, false, mountErr
 	}
+	logger.Info("Mount SUCCESS", ulog.F("mountPoint", mountPoint))
 
 	vm.viewLock.Lock()
 	placeholder.ready = nil
 	vm.viewLock.Unlock()
 	close(readyCh)
 
+	logger.Info("getOrCreateViewMount completed", ulog.F("mountPoint", mountPoint), ulog.F("created", true))
 	return placeholder, true, nil
 }
 

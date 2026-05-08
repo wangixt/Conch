@@ -660,6 +660,57 @@ microvm 机器类型存在快照恢复时的内核加载冲突：
 - 错误：`Failed to find matched region, addr 0x100000`
 - 解决方案：使用 q35/virt 标准机器类型
 
+### 10.3 快照恢复失败（关键问题）
+
+**当前状态：StratoVirt快照恢复失败**
+
+**错误信息：**
+```
+Failed to open file: /run/conch/snapshot/default/shared/sha256.../layer0.erofs
+Failed to add virtio pci pmem device
+Failed to realize virtio device
+```
+
+**根本原因：**
+
+1. **内存区域不匹配**
+   - 创建时：devices包含virtio-pmem-pci（提供2GB pmem内存区域）
+   - 恢复时：缺少pmem设备，内存布局不匹配
+   - 结果：SMBIOS写入失败（找不到0xF0000内存区域）
+
+2. **共享rootfs路径不存在**
+   - pmem需要指向存在的erofs文件
+   - AcquireResumeWorkspace应该创建共享rootfs overlayfs mount
+   - 但`/var/run/conch/snapshot/default/shared/`目录不存在
+
+**StratoVirt快照恢复机制限制：**
+
+| 限制 | 说明 | 影响 |
+|------|------|------|
+| **设备配置必须一致** | 恢复时的设备列表必须与创建时完全匹配 | 缺少pmem会导致设备realize失败 |
+| **内存区域必须完整** | 所有memory-backend区域必须存在 | 缺少区域导致SMBIOS写入失败 |
+| **pmem必须有mem-path** | memory-backend-file必须有有效文件路径 | 文件不存在导致启动失败 |
+
+**对比CLH和StratoVirt：**
+
+| 特性 | CLH | StratoVirt |
+|------|-----|------------|
+| 恢复机制 | 空VM + restore API | `-incoming file:` + 匹配设备 |
+| rootfs处理 | restore API自动处理 | 需要pmem设备（依赖共享rootfs） |
+| 设备一致性 | 不强制要求 | **必须完全一致** |
+
+**详细调试文档：**
+
+完整的问题分析和调试记录见：[docs/design/stratovirt-snapshot-resume-debug.md](docs/design/stratovirt-snapshot-resume-debug.md)
+
+**临时解决方案：**
+
+在修复快照恢复问题之前，建议使用CLH进行快照功能：
+```yaml
+sandbox:
+  default_vmm: cloud-hypervisor
+```
+
 ## 11. 未来优化方向
 
 1. **恢复后快照支持**：在恢复流程中创建 active snapshot

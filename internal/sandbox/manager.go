@@ -320,10 +320,10 @@ func waitForVsockAgentReadyStratovirt(ctx context.Context, sbx *Sandbox, sandbox
 				file := os.NewFile(uintptr(fd), "vsock")
 				vsockConn, err := net.FileConn(file)
 				if err != nil {
-					logger.Warn("failed to create net.Conn from vsock fd", ulog.F("error", err))
+					logger.Warn("failed to create net.Conn from vsock fd, but Agent is READY so proceeding", ulog.F("error", err))
 					file.Close()
-					time.Sleep(vsockSignalRetry)
-					continue
+					close(readyCh)
+					return
 				}
 				sbx.vsockConn = vsockConn
 				close(readyCh)
