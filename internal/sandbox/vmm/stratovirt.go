@@ -34,11 +34,14 @@ const startScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 -initrd {{ .RootfsPath }} \
 -append "console=ttyS0 reboot=k quiet panic=1 root=/dev/ram0 rw conch.sandbox_id={{ .SandboxId }}" \
 -m {{ .MemorySize }}M \
+-object memory-backend-file,size={{ .MemorySize }}M,id=mem0,mem-path={{ .MemoryPath }},share=on \
 -smp {{ .CPUBoot }} \
 -qmp unix:{{ .VmmSocket }},server,nowait \
 -serial socket,path={{ .SerialSocket }},server,nowait \
 -netdev tap,id=net0,ifname={{ .TapName }} \
 -device virtio-net-pci,netdev=net0,id=net0,bus=pcie.0,addr=0x10 \
+{{ .PmemDevices }} \
+-device vhost-vsock-pci,id=vsock0,guest-cid={{ .VsockCID }},bus=pcie.0,addr=0x11 \
 -disable-seccomp`
 
 const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
@@ -48,11 +51,14 @@ const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 -initrd {{ .RootfsPath }} \
 -append "console=ttyS0 reboot=k quiet panic=1 root=/dev/ram0 rw" \
 -m {{ .MemorySize }}M \
+-object memory-backend-file,size={{ .MemorySize }}M,id=mem0,mem-path={{ .MemoryPath }},share=on \
 -smp {{ .CPUBoot }} \
 -qmp unix:{{ .VmmSocket }},server,nowait \
 -serial socket,path={{ .SerialSocket }},server,nowait \
 -netdev tap,id=net0,ifname={{ .TapName }} \
 -device virtio-net-pci,netdev=net0,id=net0,bus=pcie.0,addr=0x10 \
+{{ .PmemDevices }} \
+-device vhost-vsock-pci,id=vsock0,guest-cid={{ .VsockCID }},bus=pcie.0,addr=0x11 \
 -disable-seccomp \
 -incoming file:{{ .SnapfilePath }}`
 
@@ -62,6 +68,7 @@ type StartScriptStratovirtArgs struct {
 	CPUMax        int64
 	MemorySize    string
 	MachineType   string
+	MemoryPath    string
 	KernelPath    string
 	RootfsPath    string
 	NamespaceID   string
@@ -71,6 +78,7 @@ type StartScriptStratovirtArgs struct {
 	SnapfilePath  string
 	SandboxId     string
 	VsockCID      uint32
+	PmemDevices   string
 }
 
 type StratovirtClient struct {
@@ -101,12 +109,15 @@ func (s *StratovirtClient) BuildStartCmd(args *ResourceArgs, isResume bool) (str
 		vmmBinaryPath = path
 	}
 
+	pmemDevices := buildPmemDevices(args.PmemPaths)
+
 	stArgs := StartScriptStratovirtArgs{
 		VmmBinaryPath: vmmBinaryPath,
 		CPUBoot:       args.CPUBoot,
 		CPUMax:        args.CPUMax,
 		MemorySize:    strconv.FormatInt(args.MemorySize, 10),
 		MachineType:   getMachineType(),
+		MemoryPath:    args.MemoryPath,
 		KernelPath:    args.KernelPath,
 		RootfsPath:    args.InitrdPath,
 		NamespaceID:   args.NamespaceID,
@@ -116,6 +127,7 @@ func (s *StratovirtClient) BuildStartCmd(args *ResourceArgs, isResume bool) (str
 		SnapfilePath:  args.SnapfilePath,
 		SandboxId:     args.SandboxId,
 		VsockCID:      args.VsockCID,
+		PmemDevices:   pmemDevices,
 	}
 
 	_, err := os.Stat(stArgs.VmmBinaryPath)
@@ -155,6 +167,36 @@ func (s *StratovirtClient) BuildStartCmd(args *ResourceArgs, isResume bool) (str
 	script := scriptBuffer.String()
 	logger.Debug("Build start command (Stratovirt)", ulog.F("script", script))
 	return script, nil
+}
+
+func buildPmemDevices(pmemPaths []string) string {
+	if len(pmemPaths) == 0 {
+		return ""
+	}
+
+	var devices []string
+	for i, path := range pmemPaths {
+		memId := fmt.Sprintf("pmem%d", i)
+		devId := fmt.Sprintf("pmem%dpci", i)
+		addr := fmt.Sprintf("0x%x", 0x12+i)
+
+		size := getFileSize(path)
+
+		object := fmt.Sprintf("-object memory-backend-file,size=%d,id=%s,mem-path=%s,share=on", size, memId, path)
+		device := fmt.Sprintf("-device virtio-pmem-pci,id=%s,memdev=%s,bus=pcie.0,addr=%s", devId, memId, addr)
+
+		devices = append(devices, object, device)
+	}
+
+	return strings.Join(devices, " \\\n")
+}
+
+func getFileSize(path string) int64 {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Size()
 }
 
 func (s *StratovirtClient) connectQMP() (net.Conn, *bufio.Reader, error) {
