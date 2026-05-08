@@ -181,8 +181,13 @@ func buildPmemDevices(pmemPaths []string) string {
 		addr := fmt.Sprintf("0x%x", 0x12+i)
 
 		size := getFileSize(path)
+		if size == 0 {
+			continue
+		}
 
-		object := fmt.Sprintf("-object memory-backend-file,size=%d,id=%s,mem-path=%s,share=on", size, memId, path)
+		sizeStr := fmt.Sprintf("%dM", size/(1024*1024))
+
+		object := fmt.Sprintf("-object memory-backend-file,size=%s,id=%s,mem-path=%s,share=on", sizeStr, memId, path)
 		device := fmt.Sprintf("-device virtio-pmem-pci,id=%s,memdev=%s,bus=pcie.0,addr=%s", devId, memId, addr)
 
 		devices = append(devices, object, device)
@@ -192,11 +197,15 @@ func buildPmemDevices(pmemPaths []string) string {
 }
 
 func getFileSize(path string) int64 {
+	logger := ulog.GetLogger()
 	info, err := os.Stat(path)
 	if err != nil {
+		logger.Warn("Failed to get file size", ulog.F("path", path), ulog.F("error", err))
 		return 0
 	}
-	return info.Size()
+	size := info.Size()
+	logger.Debug("Got file size", ulog.F("path", path), ulog.F("size", size))
+	return size
 }
 
 func (s *StratovirtClient) connectQMP() (net.Conn, *bufio.Reader, error) {
