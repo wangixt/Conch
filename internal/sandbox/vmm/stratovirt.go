@@ -27,12 +27,19 @@ func getMachineType() string {
 	return "virt"
 }
 
+func getConsoleDevice() string {
+	if runtime.GOARCH == "amd64" || runtime.GOARCH == "x86_64" {
+		return "ttyS0"
+	}
+	return "ttyAMA0"
+}
+
 const startScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 {{ .VmmBinaryPath }} \
 -machine {{ .MachineType }} \
 -kernel {{ .KernelPath }} \
 -initrd {{ .RootfsPath }} \
--append "console=ttyS0 reboot=k quiet panic=1 root=/dev/ram0 rw conch.sandbox_id={{ .SandboxId }}" \
+-append "console={{ .ConsoleDevice }} reboot=k quiet panic=1 root=/dev/ram0 rw conch.sandbox_id={{ .SandboxId }}" \
 -m {{ .MemorySize }}M \
 -object memory-backend-file,size={{ .MemorySize }}M,id=mem0,mem-path={{ .MemoryPath }},share=on \
 -smp {{ .CPUBoot }} \
@@ -49,7 +56,7 @@ const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 -machine {{ .MachineType }} \
 -kernel {{ .KernelPath }} \
 -initrd {{ .RootfsPath }} \
--append "console=ttyS0 reboot=k quiet panic=1 root=/dev/ram0 rw" \
+-append "console={{ .ConsoleDevice }} reboot=k quiet panic=1 root=/dev/ram0 rw" \
 -m {{ .MemorySize }}M \
 -object memory-backend-ram,size={{ .MemorySize }}M,id=mem0 \
 -smp {{ .CPUBoot }} \
@@ -60,7 +67,7 @@ const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 {{ .PmemDevices }} \
 -device vhost-vsock-pci,id=vsock0,guest-cid={{ .VsockCID }},bus=pcie.0,addr=0x11 \
 -disable-seccomp \
--incoming file:{{ .SnapfilePath }},mapped=false`
+-incoming file:{{ .SnapfilePath }}`
 
 type StartScriptStratovirtArgs struct {
 	VmmBinaryPath string
@@ -68,6 +75,7 @@ type StartScriptStratovirtArgs struct {
 	CPUMax        int64
 	MemorySize    string
 	MachineType   string
+	ConsoleDevice string
 	MemoryPath    string
 	KernelPath    string
 	RootfsPath    string
@@ -117,6 +125,7 @@ func (s *StratovirtClient) BuildStartCmd(args *ResourceArgs, isResume bool) (str
 		CPUMax:        args.CPUMax,
 		MemorySize:    strconv.FormatInt(args.MemorySize, 10),
 		MachineType:   getMachineType(),
+		ConsoleDevice: getConsoleDevice(),
 		MemoryPath:    args.MemoryPath,
 		KernelPath:    args.KernelPath,
 		RootfsPath:    args.InitrdPath,

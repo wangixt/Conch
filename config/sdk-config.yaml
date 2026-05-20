@@ -5,7 +5,7 @@ sandbox:
 
 snapshot:
   snapshot_id: ""                                 # Snapshot ID (default:auto generate)
-#  vmm_name: "cloud-hypervisor"                    # *Virtual machine monitor name
+    #vmm_name: "cloud-hypervisor"                    # *Virtual machine monitor name
   vmm_name: "stratovirt"
   vcpu_num: 1                                     # *Number of virtual CPUs
   ram_mb: 1024                                    # *Memory size in MB
@@ -16,5 +16,6 @@ image:
   image_name: "hub.oepkgs.net/conch/openeuler:odd-x86"
   use_snapshot: false                              # When true, treat image_name as a snapshot-start image and use the snapshot startup path
   vmm_name: "stratovirt"                    # *Virtual machine monitor name
+    #vmm_name: "cloud-hypervisor"
   vcpu_num: 1                                     # *Number of virtual CPUs
   ram_mb: 1024                                    # *Memory size in MB
