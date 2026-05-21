@@ -21,10 +21,7 @@ import (
 const defaultStratovirtBinary = "/usr/bin/stratovirt"
 
 func getMachineType() string {
-	if runtime.GOARCH == "amd64" || runtime.GOARCH == "x86_64" {
-		return "q35"
-	}
-	return "virt"
+	return "microvm"
 }
 
 func getConsoleDevice() string {
@@ -46,9 +43,9 @@ const startScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 -qmp unix:{{ .VmmSocket }},server,nowait \
 -serial socket,path={{ .SerialSocket }},server,nowait \
 -netdev tap,id=net0,ifname={{ .TapName }} \
--device virtio-net-pci,netdev=net0,id=net0,bus=pcie.0,addr=0x10 \
+-device virtio-net-device,netdev=net0,id=net0 \
 {{ .PmemDevices }} \
--device vhost-vsock-pci,id=vsock0,guest-cid={{ .VsockCID }},bus=pcie.0,addr=0x11 \
+-device vhost-vsock-device,id=vsock0,guest-cid={{ .VsockCID }} \
 -disable-seccomp`
 
 const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
@@ -63,9 +60,9 @@ const resumeScriptStratovirt = `ip netns exec {{ .NamespaceID }} \
 -qmp unix:{{ .VmmSocket }},server,nowait \
 -serial socket,path={{ .SerialSocket }},server,nowait \
 -netdev tap,id=net0,ifname={{ .TapName }} \
--device virtio-net-pci,netdev=net0,id=net0,bus=pcie.0,addr=0x10 \
+-device virtio-net-device,netdev=net0,id=net0 \
 {{ .PmemDevices }} \
--device vhost-vsock-pci,id=vsock0,guest-cid={{ .VsockCID }},bus=pcie.0,addr=0x11 \
+-device vhost-vsock-device,id=vsock0,guest-cid={{ .VsockCID }} \
 -disable-seccomp \
 -incoming file:{{ .SnapfilePath }}`
 
@@ -186,8 +183,7 @@ func buildPmemDevices(pmemPaths []string, readonly bool) string {
 	var devices []string
 	for i, path := range pmemPaths {
 		memId := fmt.Sprintf("pmem%d", i)
-		devId := fmt.Sprintf("pmem%dpci", i)
-		addr := fmt.Sprintf("0x%x", 0x12+i)
+		devId := fmt.Sprintf("pmem%ddev", i)
 
 		size := getFileSize(path)
 		if size == 0 {
@@ -197,7 +193,7 @@ func buildPmemDevices(pmemPaths []string, readonly bool) string {
 		sizeStr := fmt.Sprintf("%dM", size/(1024*1024))
 
 		object := fmt.Sprintf("-object memory-backend-file,size=%s,id=%s,mem-path=%s,share=off", sizeStr, memId, path)
-		device := fmt.Sprintf("-device virtio-pmem-pci,id=%s,memdev=%s,bus=pcie.0,addr=%s", devId, memId, addr)
+		device := fmt.Sprintf("-device virtio-pmem-device,id=%s,memdev=%s", devId, memId)
 
 		devices = append(devices, object, device)
 	}
