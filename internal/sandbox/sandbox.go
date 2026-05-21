@@ -47,7 +47,7 @@ func ResumeSandbox(
 	ctx context.Context,
 	snapshotConf *snapshot.SnapshotConfig,
 	namespace, vmmName, sandboxId string, vcpuNum int64, pool *network.Pool,
-	vsockCID uint32, vsockSocketPath string,
+	vsockCID uint32, vsockSocketPath string, numaNode int,
 ) (s *Sandbox, e error) {
 	cleanup := NewCleanup()
 	defer func() {
@@ -85,6 +85,7 @@ func ResumeSandbox(
 		PmemPaths:       snapshotConf.PmemFiles(),
 		VsockCID:        vsockCID,
 		VsockSocketPath: vsockSocketPath,
+		NumaNode:        numaNode,
 	}
 
 	vmmHandle, vmmErr := vmm.NewProcess(
@@ -127,7 +128,7 @@ func CreateSandbox(
 	ctx context.Context,
 	snapshotConf *snapshot.SnapshotConfig,
 	namespace, vmmName, sandboxId string, vcpuNum int64, pool *network.Pool,
-	vsockCID uint32, vsockSocketPath string,
+	vsockCID uint32, vsockSocketPath string, numaNode int,
 ) (s *Sandbox, e error) {
 
 	cleanup := NewCleanup()
@@ -164,6 +165,7 @@ func CreateSandbox(
 		VsockCID:        vsockCID,
 		VsockSocketPath: vsockSocketPath,
 		SandboxId:       sandboxId,
+		NumaNode:        numaNode,
 	}
 
 	vmmHandle, vmmErr := vmm.NewProcess(

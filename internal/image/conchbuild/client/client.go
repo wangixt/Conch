@@ -43,6 +43,7 @@ type CreateRequest struct {
 	SandboxId  string `json:"sandbox_id"`
 	VcpuNum    int64  `json:"vcpu_num"`
 	RamMB      int64  `json:"ram_mb"`
+	NumaNode   int    `json:"numa_node"`
 }
 
 // CreateResponse is the JSON response from sandbox create

@@ -21,6 +21,7 @@ USE_SNAPSHOT_KEY = "use_snapshot"
 VMM_NAME_KEY = "vmm_name"
 VCPU_NUM_KEY = "vcpu_num"
 RAM_MB_KEY = "ram_mb"
+NUMA_NODE_KEY = "numa_node"
 STATUS_KEY = "status"
 ERROR_KEY = "error"
 MESSAGE_KEY = "message"
@@ -89,6 +90,7 @@ class Sandbox:
             snapshot_id: Optional[str] = None,
             vcpu_num: Optional[int] = None,
             ram_mb: Optional[int] = None,
+            numa_node: Optional[int] = None,
             config_path: Optional[str] = None,
             use_snapshot: Optional[bool] = None,
     ):
@@ -115,6 +117,7 @@ class Sandbox:
         self.client = None
         self.vcpu_num = vcpu_num
         self.ram_mb = ram_mb
+        self.numa_node = numa_node if numa_node is not None else -1
 
 
     def _build_control_plane_url(self, path: str) -> str:
@@ -154,6 +157,7 @@ class Sandbox:
             SANDBOX_ID_KEY: self.sandbox_id,
             VCPU_NUM_KEY: self.vcpu_num or config[VCPU_NUM_KEY],
             RAM_MB_KEY: self.ram_mb or config[RAM_MB_KEY],
+            NUMA_NODE_KEY: self.numa_node,
         }
 
     def _update_client_from_result(self, result: Dict[str, Any]):

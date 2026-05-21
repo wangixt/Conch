@@ -51,6 +51,7 @@ type SandboxCreateRequest struct {
 	SandboxId   string `json:"sandbox_id"`
 	VcpuNum     int64  `json:"vcpu_num"`
 	RamMB       int64  `json:"ram_mb"`
+	NumaNode    int    `json:"numa_node"`
 }
 
 type SandboxDeleteRequest struct {
@@ -72,15 +73,15 @@ func sandboxMapKey(namespace, sandboxID string) string {
 	return namespace + ":" + sandboxID
 }
 
-func createSandboxWithVsockSend(ctx context.Context, snapshotConf *snapshot.SnapshotConfig, namespace, vmmName, sandboxId string, vcpuNum int64, pool *network.Pool, vsockSignalRetry, vsockSignalTimeout time.Duration, resume bool, vsockCID uint32, vsockSocketPath string) (*Sandbox, error) {
+func createSandboxWithVsockSend(ctx context.Context, snapshotConf *snapshot.SnapshotConfig, namespace, vmmName, sandboxId string, vcpuNum int64, pool *network.Pool, vsockSignalRetry, vsockSignalTimeout time.Duration, resume bool, vsockCID uint32, vsockSocketPath string, numaNode int) (*Sandbox, error) {
 	logger := ulog.GetLogger()
 
 	var sbx *Sandbox
 	var createErr error
 	if resume {
-		sbx, createErr = ResumeSandbox(ctx, snapshotConf, namespace, vmmName, sandboxId, vcpuNum, pool, vsockCID, vsockSocketPath)
+		sbx, createErr = ResumeSandbox(ctx, snapshotConf, namespace, vmmName, sandboxId, vcpuNum, pool, vsockCID, vsockSocketPath, numaNode)
 	} else {
-		sbx, createErr = CreateSandbox(ctx, snapshotConf, namespace, vmmName, sandboxId, vcpuNum, pool, vsockCID, vsockSocketPath)
+		sbx, createErr = CreateSandbox(ctx, snapshotConf, namespace, vmmName, sandboxId, vcpuNum, pool, vsockCID, vsockSocketPath, numaNode)
 	}
 	if createErr != nil {
 		return nil, fmt.Errorf("failed to create sandbox: %w", createErr)
@@ -403,7 +404,7 @@ func (m *Manager) Create(req SandboxCreateRequest) (string, error) {
 		}
 	}()
 
-	sbx, err = createSandboxWithVsockSend(ctx, snapshotConf, namespace, vmmName, req.SandboxId, req.VcpuNum, m.pool, m.vsockSignalRetry, m.vsockSignalTimeout, resume, vsockCID, vsockSocketPath)
+	sbx, err = createSandboxWithVsockSend(ctx, snapshotConf, namespace, vmmName, req.SandboxId, req.VcpuNum, m.pool, m.vsockSignalRetry, m.vsockSignalTimeout, resume, vsockCID, vsockSocketPath, req.NumaNode)
 
 	if err != nil {
 		if releaseErr := m.ReleaseCID(req.SandboxId); releaseErr != nil {

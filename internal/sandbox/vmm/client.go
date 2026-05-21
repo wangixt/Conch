@@ -52,6 +52,9 @@ type ResourceArgs struct {
 
 	// Sandbox ID (passed via kernel cmdline)
 	SandboxId string
+
+	// NUMA
+	NumaNode int
 }
 
 type vmmClient interface {

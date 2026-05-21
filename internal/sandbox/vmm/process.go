@@ -89,14 +89,33 @@ func NewProcess(
 		return nil, fmt.Errorf("error stating disk file: %w", err)
 	}
 
-	cmd := exec.Command(
-		"unshare",
-		"-m",
-		"--",
-		"bash",
-		"-c",
-		startScript,
-	)
+	var cmd *exec.Cmd
+	if vmmResourceArgs.NumaNode >= 0 {
+		logger.Info("Using NUMA affinity",
+			ulog.F("numa_node", vmmResourceArgs.NumaNode),
+			ulog.F("sandbox_id", sandboxId),
+		)
+		cmd = exec.Command(
+			"numactl",
+			"--cpunodebind="+fmt.Sprintf("%d", vmmResourceArgs.NumaNode),
+			"--membind="+fmt.Sprintf("%d", vmmResourceArgs.NumaNode),
+			"unshare",
+			"-m",
+			"--",
+			"bash",
+			"-c",
+			startScript,
+		)
+	} else {
+		cmd = exec.Command(
+			"unshare",
+			"-m",
+			"--",
+			"bash",
+			"-c",
+			startScript,
+		)
+	}
 	// case Operation not permitted
 	// cmd.SysProcAttr = &syscall.SysProcAttr{
 	// 	Setsid: true, // Create a new session
